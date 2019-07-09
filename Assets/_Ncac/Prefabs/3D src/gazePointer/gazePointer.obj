@@ -1,0 +1,137 @@
+# 3ds Max Wavefront OBJ Exporter v0.97b - (c)2007 guruware
+# File Created: 15.01.2019 16:17:22
+
+mtllib gazePointer.mtl
+
+#
+# object Cylinder001
+#
+
+#
+# object Object001
+#
+
+v  0.0500 0.2000 -0.0000
+v  -0.0000 0.2000 -0.0500
+v  -0.0500 0.2000 0.0000
+v  0.0000 0.2000 0.0500
+# 4 vertices
+
+vn 0.0000 1.0000 -0.0000
+vn 0.0000 1.0000 -0.0000
+vn 0.0000 1.0000 -0.0000
+vn 0.0000 1.0000 -0.0000
+# 4 vertex normals
+
+vt 0.1000 0.0500 0.0000
+vt 0.0500 0.1000 0.0000
+vt 0.0000 0.0500 0.0000
+vt 0.0500 0.0000 0.0000
+# 4 texture coords
+
+o Object001
+g Object001
+usemtl red
+f 4/4/1 1/1/2 2/2/3 3/3/4 
+# 1 polygons
+
+#
+# object Object002
+#
+
+v  0.0000 0.0000 -0.0000
+v  -0.0000 0.2000 -0.0500
+v  -0.0500 0.2000 0.0000
+# 3 vertices
+
+vn -0.6963 -0.1741 -0.6963
+vn -0.6963 -0.1741 -0.6963
+vn -0.6963 -0.1741 -0.6963
+# 3 vertex normals
+
+vt 0.0000 0.0000 1.0000
+vt 0.0000 0.2000 1.0000
+vt 0.0785 0.2000 1.0000
+# 3 texture coords
+
+o Object002
+g Object002
+usemtl orange
+f 5/5/5 7/7/6 6/6/7 
+# 0 polygons - 1 triangles
+
+#
+# object Object003
+#
+
+v  0.0000 0.0000 -0.0000
+v  0.0500 0.2000 -0.0000
+v  -0.0000 0.2000 -0.0500
+# 3 vertices
+
+vn 0.6963 -0.1741 -0.6963
+vn 0.6963 -0.1741 -0.6963
+vn 0.6963 -0.1741 -0.6963
+# 3 vertex normals
+
+vt 0.0000 0.0000 1.0000
+vt -0.0785 0.2000 1.0000
+vt 0.0000 0.2000 1.0000
+# 3 texture coords
+
+o Object003
+g Object003
+usemtl yellow
+f 8/8/8 10/10/9 9/9/10 
+# 0 polygons - 1 triangles
+
+#
+# object Object004
+#
+
+v  0.0000 0.0000 -0.0000
+v  0.0500 0.2000 -0.0000
+v  0.0000 0.2000 0.0500
+# 3 vertices
+
+vn 0.6963 -0.1741 0.6963
+vn 0.6963 -0.1741 0.6963
+vn 0.6963 -0.1741 0.6963
+# 3 vertex normals
+
+vt 0.2356 0.0000 1.0000
+vt 0.2356 0.2000 1.0000
+vt 0.1571 0.2000 1.0000
+# 3 texture coords
+
+o Object004
+g Object004
+usemtl orange
+f 11/11/11 12/12/12 13/13/13 
+# 0 polygons - 1 triangles
+
+#
+# object Object005
+#
+
+v  0.0000 0.0000 -0.0000
+v  -0.0500 0.2000 0.0000
+v  0.0000 0.2000 0.0500
+# 3 vertices
+
+vn -0.6963 -0.1741 0.6963
+vn -0.6963 -0.1741 0.6963
+vn -0.6963 -0.1741 0.6963
+# 3 vertex normals
+
+vt 0.0000 0.0000 1.0000
+vt 0.0785 0.2000 1.0000
+vt 0.1571 0.2000 1.0000
+# 3 texture coords
+
+o Object005
+g Object005
+usemtl yellow
+f 14/14/14 16/16/15 15/15/16 
+# 0 polygons - 1 triangles
+
