@@ -27,8 +27,8 @@ namespace NCAC
 
         public bool IsAutoReinitializing
         {
-            get { return TrackingController.Instance.m_isImgRealignEnabled; }
-            set { TrackingController.Instance.m_isImgRealignEnabled = value; }
+            get { return TrackingController.Instance.m_isImageAligmentEnabled; }
+            set { TrackingController.Instance.m_isImageAligmentEnabled = value; }
         }
 
         public bool IsPlaneVisualizerEnabled
@@ -93,7 +93,7 @@ namespace NCAC
         }
         public void OnToggle_AutoReinit(Toggle tg)
         {
-            TrackingController.Instance.m_isImgRealignEnabled = tg.isOn;
+            TrackingController.Instance.m_isImageAligmentEnabled = tg.isOn;
         }
 
         public void _OnManualInitButtonPressed()
@@ -126,14 +126,14 @@ namespace NCAC
         IEnumerator PauseAutoReinit()
         {
             // if the auto reinitialization was enabled
-            if (TrackingController.Instance.m_isImgRealignEnabled)
+            if (TrackingController.Instance.m_isImageAligmentEnabled)
             {
-                TrackingController.Instance.m_isImgRealignEnabled = false;
+                TrackingController.Instance.m_isImageAligmentEnabled = false;
                 while (TrackingController.Instance.m_isInManualInitMode)
                 {
                     yield return null;
                 }
-                TrackingController.Instance.m_isImgRealignEnabled = true;
+                TrackingController.Instance.m_isImageAligmentEnabled = true;
             }
 
         }

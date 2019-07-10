@@ -17,9 +17,11 @@ namespace NCAC
     /// transferred and edited from the google sample files. For more detail,
     /// refer to the Slither AR core intro by Codelab and the default ARcore examples.
     /// </remarks>
+    public enum IMAGEALIGN { SINGLE, M_STANDBY, M_CACULATING, M_CALCULATING, M_FINISHED, DISABLED }
 
     [RequireComponent(typeof(NcDebugScreen))]
     [RequireComponent(typeof(GazeContoller))]
+
     public class TrackingController : MonoBehaviour
     {
         #region private class members
@@ -39,6 +41,21 @@ namespace NCAC
 
         // List of augmented images with its index
         private Dictionary<int, NcAugmentedImageInfo> m_augementedImageDict = new Dictionary<int, NcAugmentedImageInfo>();
+
+
+        // Image alignment parameters
+        float m_ImageTimer_averagingDuration = 3f;
+        float m_imageTimer_resetTimer = 0.5f;
+        float m_ImageTimer_pauseTime = 4.5f;
+        // Image reorientation time accumulated
+        float m_ImageTimer_accumulated = 0;
+        float m_ImageTimer_lastDetected = 0;
+
+        // Image Alignment Mode
+        public IMAGEALIGN e_IAState = IMAGEALIGN.DISABLED;
+        private AugmentedImage previousDetectedImage;
+        //Pose list of detected augmented images
+        List<Pose> m_imagePoses = new List<Pose>();
 
         #region public class members
 
@@ -81,10 +98,12 @@ namespace NCAC
         #region class properties
         // Flags
         // debuging flag
+
+
         public bool m_isDebugScreenEnabled { get; set; }
 
         // Auto initialization Flag
-        public bool m_isImgRealignEnabled { get; set; }
+        public bool m_isImageAligmentEnabled { get; set; }
 
         // indicates if the app is in manual initialization mode
         public bool m_isInManualInitMode { get; set; }
@@ -97,11 +116,7 @@ namespace NCAC
 
 
         // indicates gaze vis
-        public bool m_isGazeVisEnabled
-        {
-            get { return GazeContoller.Instance.IsGazeVisualizerEnabled; }
-            set { GazeContoller.Instance.IsGazeVisualizerEnabled = value; }
-        }
+        public bool m_isGazeVisEnabled { get; set; }
         //end flags
 
         //ref to the AR cam
@@ -119,22 +134,23 @@ namespace NCAC
             if (TrackingController.Instance == null) TrackingController.Instance = this;
             if (TrackingController.Instance != this) Destroy(this);
             #endregion
+            // set AR Cam
+            if (m_ARCam == null) m_ARCam = Camera.main;
 
             //class param setting
-            // set the ar cam member
 
 
             m_isDebugScreenEnabled = enableDebugScreen;
-            m_isImgRealignEnabled = enableImageRealignment;
+            m_isImageAligmentEnabled = enableImageRealignment;
             m_isPlaneVisEnabled = enablePlaneVisualizer;
             m_isAnchorVisEnabled = enableAnchorVisualizer;
-
+            m_isGazeVisEnabled = enableGazeVisualizer;
             m_isInManualInitMode = false;
             //IsGazeVisualizerEnabled = false;
 
-            if (m_ARCam == null) m_ARCam = Camera.main;
 
-            ;            // initiate plane tracker class
+
+            // initiate plane tracker class
             PlaneTracker = new NcacDetectedPlaneTracker();
             m_PlaneVisList = new List<GoogleARCore.Examples.Common.DetectedPlaneVisualizer>();
         }
@@ -143,16 +159,15 @@ namespace NCAC
         // Start is called before the first frame update
         void Start()
         {
-
-            m_isGazeVisEnabled = enableGazeVisualizer;
             // check on startup that this device is ARcore-compatible
             QuitOnConnectionErrors();
+            m_distPlaneToImage = 99999;
         }
 
         // Update is called once per frame
         void Update()
         {
-            m_distPlaneToImage = 99999;
+
 
             if (Input.GetKeyDown("space"))
             {
@@ -187,7 +202,7 @@ namespace NCAC
             //if the main plane is set, and it was subsumed by another, update the main plain
             if (PlaneTracker.m_refPlane != null)
             {
-                while (PlaneTracker.m_refPlane.SubsumedBy != null) SetReferencePlane(PlaneTracker.m_refPlane.SubsumedBy);
+                while (PlaneTracker.m_refPlane.SubsumedBy != null) TrySetReferencePlane(PlaneTracker.m_refPlane.SubsumedBy);
             }
 
             // Iterate over planes found in this frame and instantiate corresponding GameObjects to visualize them.
@@ -215,37 +230,25 @@ namespace NCAC
                 m_PlaneVisList.Add(visualizer);
             }
 
+
             #region AR Core Augmented Image Routine
-            //get all the detected images in to the list
-            try
-            {
-                Session.GetTrackables<AugmentedImage>(m_updatedImageTarget, TrackableQueryFilter.Updated);
-            }
-            catch (System.NullReferenceException e)
-            {
-                Debug.Log(" image error ");
-            }
-
+            //////////////////////////////////////////////////////JustABlockSeparator//////////////////////////////////////////////////////
+            bool wasImagePoseCalculated = false;
             AugmentedImage detectedFullImage = null;
+            Pose CalculatedPose = Pose.identity;
 
-            //flag for image realignemnt
-            bool wasRealingedwithImage = false;
-            // If image realignment is enabled and updated images are more than one
-            if (m_isImgRealignEnabled && m_updatedImageTarget.Count != 0)
+            if (m_isImageAligmentEnabled)
             {
-                // get the first fully-tracked image in the current frame
-                detectedFullImage = GetFullTrackingImage();
-
-                if (detectedFullImage != null)
+                if (wasImagePoseCalculated = SetAugmentedImagePose(out detectedFullImage, out CalculatedPose))
                 {
-                    wasRealingedwithImage = TryUpdatingPlaneAndAnchorOnImage(detectedFullImage, m_AllDetectedPlane);
+                    TryUpdatingPlaneAndAnchorOnImage(CalculatedPose, m_AllDetectedPlane);
                 }
-
             }
-
+            ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
             #endregion
+
             // Update the model position
-            if (wasRealingedwithImage == false)
+            if (wasImagePoseCalculated == false)
             {
                 PlaceModelOnAnchor(m_ModelContents, PlaneTracker.m_Anchor);
             }
@@ -259,21 +262,202 @@ namespace NCAC
             VisualizeAnchor();
         }
 
-        private bool TryUpdatingPlaneAndAnchorOnImage(AugmentedImage image, List<DetectedPlane> planeList)
+        public void ChangeImageAlignmentMode(int mode)
+        {
+            switch (mode)
+            {
+                case 1:
+                    //case IMAGEALIGN.SINGLE:
+                    ResetImageAlignmentToStandby();
+                    e_IAState = IMAGEALIGN.SINGLE;
+                    return;
+
+                case 2:
+                    //case IMAGEALIGN.M_STANDBY:
+                    ResetImageAlignmentToStandby();
+                    e_IAState = IMAGEALIGN.M_STANDBY;
+                    return;
+
+                case 3:
+                    //case IMAGEALIGN.DISABLED:
+                    ResetImageAlignmentToStandby();
+                    e_IAState = IMAGEALIGN.DISABLED;
+                    return;
+
+                default:
+                    return;
+            }
+        }
+
+
+        /// <summary>
+        /// This routine sets the tracked image and its pose. If the alignment state is set to Single, it just returns the tracked image and its pose.
+        /// If the alignment state is set to multi, it sets the tracking image and its averaged pose. The return value is true only when the pose is returned after all caculations.  
+        /// </summary>
+        /// <param name="imagePose"></param>
+        /// <param name="agImage"></param>
+        /// <returns></returns>
+        private bool SetAugmentedImagePose(out AugmentedImage agImage, out Pose imagePose)
+        {
+            AugmentedImage detectedFullImage = null;
+            agImage = null;
+            imagePose = Pose.identity;
+
+            switch (e_IAState)
+            {
+                case IMAGEALIGN.DISABLED:
+                    return false;
+
+                case IMAGEALIGN.SINGLE:
+                    try { Session.GetTrackables<AugmentedImage>(m_updatedImageTarget, TrackableQueryFilter.Updated); }
+                    catch (System.NullReferenceException e) { Debug.Log("ERR>>> Image Retrieval error "); }
+
+                    detectedFullImage = GetClosestFullTrackingImage();
+                    if (detectedFullImage != null)
+                    {
+                        agImage = detectedFullImage;
+                        imagePose = detectedFullImage.CenterPose;
+                        ShowDebugToast("IMA>>> Single image pose was calculated");
+                        return true;
+                    }
+
+                    return false;
+
+                case IMAGEALIGN.M_STANDBY:
+
+                    //get all the detected images in to the list
+                    try { Session.GetTrackables<AugmentedImage>(m_updatedImageTarget, TrackableQueryFilter.Updated); }
+                    catch (System.NullReferenceException e) { Debug.Log(" ERR>>> Image Retrieval error "); }
+
+                    // If image realignment is enabled and updated images are more than one
+                    if (m_updatedImageTarget.Count != 0)
+                    {
+                        AugmentedImage currentDetectedImage = GetClosestFullTrackingImage();
+
+                        //If there is a fully-tracking image
+                        if (currentDetectedImage != null)
+                        {
+                            // update detection time stamp
+                            m_ImageTimer_lastDetected = Time.time;
+                            if (previousDetectedImage == currentDetectedImage)
+                            {
+                                e_IAState = IMAGEALIGN.M_CACULATING;
+                                AndyHelper.ShowToastMsg("IMA>>> Image Alignment CACULATION begins");
+                            }
+                            else
+                            {
+                                previousDetectedImage = currentDetectedImage;
+                            }
+
+                        }
+                    }
+                    return false;
+
+                case IMAGEALIGN.M_CACULATING:
+                    // increase the detection timer
+                    m_ImageTimer_accumulated += Time.deltaTime;
+
+                    try { Session.GetTrackables<AugmentedImage>(m_updatedImageTarget, TrackableQueryFilter.Updated); }
+                    catch (System.NullReferenceException e) { Debug.Log("ERR>>> Image Retrieval error "); }
+
+                    //if there is a detected image
+                    if (m_updatedImageTarget.Count != 0)
+                    {
+                        AugmentedImage currentDetectedImage = GetClosestFullTrackingImage();
+
+                        //If there is a fully-tracking image
+                        if (currentDetectedImage != null)
+                        {
+                            // update the detection time
+                            m_ImageTimer_lastDetected = Time.time;
+
+                            // if the tracked image is different to what was previously, reset
+                            if (previousDetectedImage != currentDetectedImage)
+                            {
+                                previousDetectedImage = currentDetectedImage;
+                                ResetImageAlignmentToStandby();
+                                ShowDebugToast("IMA>>> A Different Image has been detected. Alignment was reset.");
+                            }
+
+                            // if the device is looking at the same image
+                            else if (previousDetectedImage == currentDetectedImage)
+                            {
+                                // if it is within the specificed tracking accumulation limit, add the pose of the image. 
+                                if (m_ImageTimer_accumulated < m_ImageTimer_averagingDuration)
+                                {
+                                    m_imagePoses.Add(currentDetectedImage.CenterPose);
+                                }
+
+                                // if the specified tracking time has been exceeded, run the alignment routine.
+                                else
+                                {
+                                    agImage = currentDetectedImage;
+                                    imagePose = NcHelpers.AveragePose(m_imagePoses);
+                                    ShowDebugToast("IMA>>> Image pose is calculated from " + m_imagePoses.Count + " datapoints");
+                                    ResetImageAlignmentToStandby();
+                                    e_IAState = IMAGEALIGN.M_FINISHED;
+                                    
+                                    return true;
+                                }
+                            }
+                        }
+
+                        //if there is no *fully-tracking* image in the frame, reset alignment to stanby
+                        else if (currentDetectedImage == null && (Time.time - m_ImageTimer_lastDetected) > m_imageTimer_resetTimer)
+                        {
+                            ShowDebugToast("IMA>>> Image alignment timeout");
+                            ResetImageAlignmentToStandby();
+                        }
+                    }
+
+                    // If there is no detected image, and the waiting time is over, reset alignment to waiting
+                    else
+                    {
+                        if ((Time.time - m_ImageTimer_lastDetected) > m_imageTimer_resetTimer)
+                        {
+                            ShowDebugToast("IMA>>> Image alignment timeout");
+                            ResetImageAlignmentToStandby();
+                        }
+                    }
+                    return false;
+
+                case IMAGEALIGN.M_FINISHED:
+
+                    m_ImageTimer_accumulated += Time.deltaTime;
+                    if (m_ImageTimer_accumulated > m_ImageTimer_pauseTime)
+                    {
+                        AndyHelper.ShowToastMsg("IMA>>> wait is over");
+                        ResetImageAlignmentToStandby();
+                    }
+                    return false;
+
+                default:
+                    return false;
+            }
+        }
+
+
+
+        private void ResetImageAlignmentToStandby()
+        {
+            //set the flag
+            e_IAState = IMAGEALIGN.M_STANDBY;
+            //clear image pose list
+            m_imagePoses.Clear();
+            // reset accumulated time of detection
+            m_ImageTimer_accumulated = 0;
+        }
+
+
+        private bool TryUpdatingPlaneAndAnchorOnImage(Pose imagePose, List<DetectedPlane> planeList)
         {
             DetectedPlane planeCoplanar;
             //Find coplanar Plane from a detected plane list
-            if ((planeCoplanar = FindCoplanarPlaneFromImagePose(image, planeList)) != null)
+            if ((planeCoplanar = FindCoplanarPlaneFromImagePose(imagePose, planeList)) != null)
             {
                 ////calc Dist to the plane from the image pose
-                print(">>>>>>>> dist from image to plane :: " + CalcDistPointToPlane(image.CenterPose.position, planeCoplanar.CenterPose.position, planeCoplanar.CenterPose.up));
+                print(">>>>>>>> dist from image to plane :: " + CalcDistPointToPlane(imagePose.position, planeCoplanar.CenterPose.position, planeCoplanar.CenterPose.up));
                 PlaneTracker.SetReferncePlane(planeCoplanar);
-
-                //colorTest
-                //foreach (A_DetectedPlaneVisualizer vis in m_PlaneVisList)
-                //{
-                //    vis.
-                //}
 
                 if (PlaneTracker.m_Anchor != null)
                 {
@@ -285,24 +469,26 @@ namespace NCAC
                 }
 
                 // Update the main anchor to be placed on the center of the image
-                PlaneTracker.UpdateMainAnchor(image.CenterPose);
+                PlaneTracker.UpdateMainAnchor(imagePose);
                 return true;
             }
             return false;
         }
 
-        DetectedPlane FindCoplanarPlaneFromImagePose(AugmentedImage image, List<DetectedPlane> planeList)
+
+
+
+        DetectedPlane FindCoplanarPlaneFromImagePose(Pose imagePose, List<DetectedPlane> planeList)
         {
             Dictionary<float, DetectedPlane> copDict = new Dictionary<float, DetectedPlane>();
 
-            Pose imagePose = image.CenterPose;
             if (m_AllDetectedPlane.Count == 0) return null;
             foreach (DetectedPlane plane in planeList)
             {
                 float res = Vector3.Dot(plane.CenterPose.up, imagePose.up);
                 if (1f - colinearPlaneThreshold < res && res < 1f + colinearPlaneThreshold)
                 {
-                    float dist = CalcDistPointToPlane(image.CenterPose.position, plane.CenterPose.position, plane.CenterPose.up);
+                    float dist = CalcDistPointToPlane(imagePose.position, plane.CenterPose.position, plane.CenterPose.up);
 
                     if (!copDict.ContainsKey(dist)) copDict.Add(dist, plane);
                 }
@@ -341,20 +527,27 @@ namespace NCAC
         /// <summary>
         /// routine to process detected an augmented image
         /// </summary>
-        private AugmentedImage GetFullTrackingImage()
+        private AugmentedImage GetClosestFullTrackingImage()
         {
-            //Debug.Log("image processing started");
+            AugmentedImage FullTrakcingImage = null;
+            float closestDist = 999f;
             foreach (var image in m_updatedImageTarget)
             {
+
                 if (image.TrackingState == TrackingState.Tracking && image.TrackingMethod == AugmentedImageTrackingMethod.FullTracking)
                 {
-                    string imageMsg = image.Name + " no index no " + image.DatabaseIndex + " is in " + image.TrackingState + " with the method:" + image.TrackingMethod;
+                    float currentDist = Vector3.Distance(image.CenterPose.position, m_ARCam.transform.position);
+                    if (currentDist < closestDist)
+                    {
+                        closestDist = currentDist;
+                        FullTrakcingImage = image;
+                    }
+                    string imageMsg = image.Name + "(#" + image.DatabaseIndex + ") is in " + image.TrackingState + "--" + image.TrackingMethod + " w/ dist: " + currentDist;
                     Debug.Log(imageMsg);
-                    return image;
                 }
             }
 
-            return null;
+            return FullTrakcingImage;
         }
 
 
@@ -381,7 +574,6 @@ namespace NCAC
         /// </summary>
         /// <param name="modelTransfom">transform of a game object</param>
         /// <param name="anchor">an anchor to which an object is moving</param>
-
         public void PlaceModelOnAnchor(Transform modelTransfom, Anchor anchor, AugmentedImage image = null)
         {
             if ((PlaneTracker.m_refPlane != null && PlaneTracker.m_Anchor != null) && m_ModelContents.parent != PlaneTracker.m_Anchor)
@@ -408,7 +600,7 @@ namespace NCAC
                     }
                     else
                     {
-                        showDebugToast("ERR!!>> there is no Image Info object for the augmented image no:: " + image.DatabaseIndex +
+                        ShowDebugToast("ERR!!>> there is no Image Info object for the augmented image no:: " + image.DatabaseIndex +
                             ". \nCheck if all the target visualizing info objects are properly created with right indices.");
                         return;
                     }
@@ -434,6 +626,7 @@ namespace NCAC
                 }
             }
         }
+
 
 
         #region MOVE_MODELS_ON_TARGETS
@@ -524,9 +717,9 @@ namespace NCAC
         }
 
         ///////////////////////////////////////////////////// hinders to start from ini because of the checking routine
-        public bool SetReferencePlane(DetectedPlane plane)
+        public bool TrySetReferencePlane(DetectedPlane plane)
         {
-            if (m_isInManualInitMode || m_isImgRealignEnabled)
+            if (m_isInManualInitMode || m_isImageAligmentEnabled)
             {
                 return PlaneTracker.SetReferncePlane(plane);
             }
@@ -542,9 +735,9 @@ namespace NCAC
         public void CreateAnchorAtGaze()
         {
             bool res = false;
-            if (GazeContoller.Instance.mTrackableHit.Trackable != null)
+            if (GazeContoller.Instance.m_TrackableHit.Trackable != null)
             {
-                res = PlaneTracker.UpdateMainAnchor(GazeContoller.Instance.mTrackableHit.Pose);
+                res = PlaneTracker.UpdateMainAnchor(GazeContoller.Instance.m_TrackableHit.Pose);
             }
 
             // If anchor update was successful
@@ -576,12 +769,12 @@ namespace NCAC
 
         public void SetDetectedPlaneAtGaze()
         {
-            if (GazeContoller.Instance.m_PlaneOfInterest == null)
+            if (!GazeContoller.Instance.m_IsGazeIntersectTrackablePlane)
             {
                 return;
             }
 
-            if (SetReferencePlane(GazeContoller.Instance.m_PlaneOfInterest))
+            if (TrySetReferencePlane(GazeContoller.Instance.m_PlaneOfInterest))
             {
                 string msg = string.Format("Main Plain at Gaze is set." + "\n{0} plane centered at {1}", GazeContoller.Instance.m_PlaneOfInterest.PlaneType, GazeContoller.Instance.m_PlaneOfInterest.CenterPose.position);
                 Debug.Log(msg);
@@ -595,7 +788,7 @@ namespace NCAC
             }
         }
 
-        public void showDebugToast(string msg)
+        public void ShowDebugToast(string msg)
         {
             if (!m_isDebugScreenEnabled) return;
             AndyHelper.ShowToastMsg(msg);
@@ -604,8 +797,8 @@ namespace NCAC
         public void OnGUI()
         {
             if (!m_isDebugScreenEnabled) return;
-
-            _ShowDebugMsg("Auto Init : " + m_isImgRealignEnabled.ToString());
+            _ShowDebugMsg("Image Alignment Mode : " + e_IAState.ToString());
+            _ShowDebugMsg("Auto Init : " + m_isImageAligmentEnabled.ToString());
             _ShowDebugMsg("Plane Vis : " + m_isPlaneVisEnabled.ToString());
             _ShowDebugMsg("Anchor Vis : " + m_isAnchorVisEnabled.ToString());
             _ShowDebugMsg("Manual Init : " + m_isInManualInitMode.ToString());
@@ -658,7 +851,7 @@ namespace NCAC
 
 
             NcDebugScreen.Instance.ChangeTextColor(Color.cyan);
-            if (GazeContoller.Instance.mObjOfInterest != null) _ShowDebugMsg(string.Format("Looking At Object : {0}", GazeContoller.Instance.mObjOfInterest.name));
+            if (GazeContoller.Instance.m_ObjectOfInterest != null) _ShowDebugMsg(string.Format("Looking At Object : {0}", GazeContoller.Instance.m_ObjectOfInterest.name));
             if (GazeContoller.Instance.m_PlaneOfInterest != null) _ShowDebugMsg(string.Format("Looking At trackable : {0}", GazeContoller.Instance.m_PlaneOfInterest.GetHashCode()));
 
             NcDebugScreen.Instance.ResetDebugScreen();
@@ -718,4 +911,5 @@ namespace NCAC
             mdebugTextStyle.fontSize = (int)((Screen.height / 45f) * 0.75f);
         }
     }
+
 }

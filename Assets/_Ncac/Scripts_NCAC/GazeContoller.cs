@@ -15,12 +15,13 @@ namespace NCAC
 
         public GameObject m_GazePointer;
 
-        public bool IsGazeVisualizerEnabled { get; set; }
+        public bool m_IsGazeVizEnabled { get; set; }
+        public bool m_IsGazeIntersectTrackablePlane { get; set; }
 
         // the plane that a user is looking at
         public DetectedPlane m_PlaneOfInterest { get; private set; }
-        public Transform mObjOfInterest { get; private set; }
-        public TrackableHit mTrackableHit { get; private set; }
+        public Transform m_ObjectOfInterest { get; private set; }
+        public TrackableHit m_TrackableHit { get; private set; }
         public RaycastHit m_rayCastHit { get; private set; }
 
         //speed of the following point visualizer. Does not effect the actual hit point. 
@@ -36,59 +37,52 @@ namespace NCAC
         {
             if (GazeContoller.Instance == null) GazeContoller.Instance = this;
             if (GazeContoller.Instance != this) Destroy(this);
-            IsGazeVisualizerEnabled = true;
+            m_IsGazeVizEnabled = true;
         }
         #endregion
 
         // Start is called before the first frame update
         void Start()
         {
-            if (ArCam == null) ArCam = TrackingController.Instance.m_ARCam; 
-            NcHelpers.HideObject(m_GazePointer); 
+            if (ArCam == null) ArCam = Camera.main;
+            NcHelpers.HideObject(m_GazePointer);
         }
 
         // Update is called once per frame
         void Update()
         {
+            m_IsGazeIntersectTrackablePlane = false;
+            m_PlaneOfInterest = null;
+
             #region Gaze towards AR Core trackables
             // if the AR core session is tracking
             if (Session.Status == SessionStatus.Tracking)
             {
-                TrackableHit trackableHit;
-                TrackableHitFlags raycastFilter = TrackableHitFlags.PlaneWithinBounds;
-                
+
+                TrackableHit hit;
+                TrackableHitFlags raycastFilter = TrackableHitFlags.PlaneWithinPolygon;
+
                 // If the gaze from the center of the screen hits AR Core trackable
-                if (Frame.Raycast(Screen.width * 0.5f, Screen.height * 0.5f, raycastFilter, out trackableHit))
+                if (Frame.Raycast(Screen.width * 0.5f, Screen.height * 0.5f, raycastFilter, out hit))
                 {
-                    // save the current trackable hit
-                    mTrackableHit = trackableHit;
-
-                    // postion of the hit point
-                    Pose pose = trackableHit.Pose;
-
-                    // Lerp a bit for a bit of smoothness. "ArGazePointer.transform.position = pt;" will also just work.
-                    m_GazePointer.transform.position = Vector3.Lerp(m_GazePointer.transform.position, pose.position, Time.smoothDeltaTime * gazeFollowingSpeed);
-                    m_GazePointer.transform.rotation = pose.rotation;
-
-                    // Record the plane of interests.
-                    m_PlaneOfInterest = trackableHit.Trackable as DetectedPlane;
+                    //detect if we are looking at a back of the plane. seems like quaternion * vector means to translate the vector in the given quaternion (roatation) frame.
+                    if ((hit.Trackable is DetectedPlane) && Vector3.Dot(ArCam.transform.position - hit.Pose.position, hit.Pose.rotation * Vector3.up) < 0)
+                    {
+                        Debug.Log("You are looking at back of the current DetectedPlane");
+                    }
+                    else
+                    {
+                        m_IsGazeIntersectTrackablePlane = true;
+                        // Record the current trackable hit
+                        m_TrackableHit = hit;
+                        // Record the current plane that the device is looking at
+                        m_PlaneOfInterest = hit.Trackable as DetectedPlane;
+                    }
 
                 }
-
-                // If the gaze does not intersect AR Core trackable
-                else
-                {
-                    //empty the mPlaneOfInterest
-                    m_PlaneOfInterest = null;
-                }
-
             }
 
             // if the AR core session is not tracking
-            else
-            {
-                m_PlaneOfInterest = null;
-            }
             #endregion
 
             VisualizeGaze();
@@ -101,18 +95,38 @@ namespace NCAC
             if (Physics.Raycast(gazeRay, out raycastHit))
             {
                 m_rayCastHit = raycastHit;
-                mObjOfInterest = raycastHit.transform;
+                m_ObjectOfInterest = raycastHit.transform;
             }
-            else mObjOfInterest = null;
+            else m_ObjectOfInterest = null;
         }
 
         void VisualizeGaze()
         {
-            if (Session.Status == SessionStatus.Tracking && IsGazeVisualizerEnabled)
+
+            if (Session.Status == SessionStatus.Tracking && m_IsGazeVizEnabled)
             {
                 NcHelpers.ShowObject(m_GazePointer);
+                // if gaze does not intersect with a trackable plane, skip updating the position of gaze visualizer
+                if (!m_IsGazeIntersectTrackablePlane)
+                {
+                    return;
+                }
+                // if a gaze intersects with a trackable plane, update the pos and rotation of the gaze pointer.
+                else
+                {
+                    Pose pose = m_TrackableHit.Pose;
+                    // Lerp a bit for a bit of smoothness. "ArGazePointer.transform.position = pt;" will also just work.
+                    m_GazePointer.transform.position = Vector3.Lerp(m_GazePointer.transform.position, pose.position, Time.smoothDeltaTime * gazeFollowingSpeed);
+                    m_GazePointer.transform.rotation = pose.rotation;
+
+                }
+
+                
             }
-            else NcHelpers.HideObject(m_GazePointer);
+            else
+            {
+                NcHelpers.HideObject(m_GazePointer);
+            }
         }
     }
 

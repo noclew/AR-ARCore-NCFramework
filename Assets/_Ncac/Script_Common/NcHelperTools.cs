@@ -11,8 +11,8 @@ namespace NCToolset
         public static void HideObject<T>(T obj)
         {
             GameObject go = obj as GameObject;
-            
-            if( typeof(Transform) == obj.GetType() ) { go = (obj as Transform).gameObject; }
+
+            if (typeof(Transform) == obj.GetType()) { go = (obj as Transform).gameObject; }
 
             if (go == null) return;
             foreach (Renderer r in go.GetComponentsInChildren<Renderer>()) r.enabled = false;
@@ -60,6 +60,53 @@ namespace NCToolset
             var words = res.Cast<Match>().Select(m => m.Value);
             return string.Join(" ", words);
         }
+
+
+        /// <summary>
+        /// math functino to average poses
+        /// </summary>
+        /// <param name="poses"></param>
+        /// <returns></returns>
+        public static Pose AveragePose(List<Pose> poses)
+        {
+            Quaternion[] qArray = new Quaternion[poses.Count];
+            Vector3[] vArray = new Vector3[poses.Count];
+
+            for (int i = 0; i < poses.Count; i++)
+            {
+                qArray[i] = poses[i].rotation;
+                vArray[i] = poses[i].position;
+            }
+
+            return new Pose(AverageVector(vArray), AverageQuaternion(qArray));
+        }
+        public static Quaternion AverageQuaternion(Quaternion[] qArray)
+        {
+            Quaternion qAvg = qArray[0];
+            float weight;
+            for (int i = 1; i < qArray.Length; i++)
+            {
+                weight = 1.0f / (float)(i + 1);
+                qAvg = Quaternion.Slerp(qAvg, qArray[i], weight);
+            }
+            return qAvg;
+        }
+
+        public static Vector3 AverageVector(Vector3[] vArray)
+        {
+            int addAmount = 0;
+            Vector3 addedVector = Vector3.zero;
+
+            foreach (Vector3 singleVector in vArray)
+            {
+                //Amount of separate rotational values so far
+                addAmount++;
+                addedVector += singleVector;
+            }
+
+            return addedVector / (float)addAmount;
+        }
+
 
         #region Helper Methods for scaling
         public static void ResetLocalScale(GameObject go)

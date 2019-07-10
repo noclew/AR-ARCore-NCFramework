@@ -25,7 +25,6 @@ namespace NCAC
 
         public bool SetReferncePlane(DetectedPlane plane)
         {
-
             if (plane != null || plane.TrackingState == TrackingState.Tracking)
             {
                 m_refPlane = plane;
@@ -35,7 +34,7 @@ namespace NCAC
 
             else
             {
-                Debug.Log("could not set the reference plane ");
+                Debug.Log("could not set the reference plane. Tracking state is not tracking or the plane is null ");
                 return false;
             }
         }
